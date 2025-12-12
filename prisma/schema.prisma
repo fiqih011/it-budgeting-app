@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =========================================
+// ENUMS
+// =========================================
+
+enum Role {
+  ADMIN
+  VIEWER
+}
+
+enum BudgetType {
+  OPEX
+  CAPEX
+}
+
+// =========================================
+// MODEL: USER
+// =========================================
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  password  String
+  role      Role      @default(VIEWER)
+  createdAt DateTime  @default(now())
+
+  AuditLogs AuditLog[]
+}
+
+// =========================================
+// MODEL: CATEGORY
+// =========================================
+
+model Category {
+  id            String        @id @default(uuid())
+  name          String
+  createdAt     DateTime      @default(now())
+
+  subcategories Subcategory[]
+  items         BudgetItem[]
+}
+
+// =========================================
+// MODEL: SUBCATEGORY
+// =========================================
+
+model Subcategory {
+  id          String       @id @default(uuid())
+  name        String
+  categoryId  String
+  createdAt   DateTime     @default(now())
+
+  category    Category     @relation(fields: [categoryId], references: [id])
+  items       BudgetItem[]
+}
+
+// =========================================
+// MODEL: BUDGET ITEM
+// =========================================
+
+model BudgetItem {
+  id             String      @id @default(uuid())
+  name           String
+  type           BudgetType
+  year           Int
+  amount         Float
+  used           Float       @default(0)
+  remaining      Float       @default(0)
+  estimateNextYr Float       @default(0)
+
+  // OPEX field
+  coa            String?
+
+  // CAPEX field
+  assetNumber    String?     @unique
+
+  categoryId     String
+  subcategoryId  String?
+
+  createdAt      DateTime    @default(now())
+
+  category       Category     @relation(fields: [categoryId], references: [id])
+  subcategory    Subcategory? @relation(fields: [subcategoryId], references: [id])
+
+  actualLogs     UsageLog[]
+  splitLogsFrom  SplitLog[]  @relation("FromItem")
+  splitLogsTo    SplitLog[]  @relation("ToItem")
+}
+
+// =========================================
+// MODEL: USAGE LOG
+// =========================================
+
+model UsageLog {
+  id        String     @id @default(uuid())
+  itemId    String
+  amount    Float
+  note      String?
+  date      DateTime   @default(now())
+
+  item      BudgetItem @relation(fields: [itemId], references: [id])
+}
+
+// =========================================
+// MODEL: SPLIT LOG
+// =========================================
+
+model SplitLog {
+  id          String     @id @default(uuid())
+  fromItemId  String
+  toItemId    String
+  amount      Float
+  date        DateTime   @default(now())
+
+  fromItem    BudgetItem @relation("FromItem", fields: [fromItemId], references: [id])
+  toItem      BudgetItem @relation("ToItem", fields: [toItemId], references: [id])
+}
+
+// =========================================
+// MODEL: AUDIT LOG
+// =========================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id])
+}
