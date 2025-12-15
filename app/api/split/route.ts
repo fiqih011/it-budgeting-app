@@ -1,20 +1,41 @@
+// app/api/split/route.ts
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
+import { validateSplit } from "@/lib/budget";
 
+// =======================
+// GET — list split logs
+// =======================
+export async function GET() {
+  const logs = await prisma.splitLog.findMany({
+    include: {
+      fromItem: true,
+      toItem: true,
+    },
+    orderBy: { date: "desc" },
+  });
+
+  return NextResponse.json(logs);
+}
+
+// =======================
+// POST — split budget
+// =======================
 export async function POST(req: Request) {
   try {
-    const { fromItemId, toItemId, amount } = await req.json();
+    const body = await req.json();
+    const { fromItemId, toItemId, amount } = body;
 
     if (!fromItemId || !toItemId || !amount) {
       return NextResponse.json(
-        { error: "fromItemId, toItemId and amount are required" },
+        { message: "fromItemId, toItemId, dan amount wajib" },
         { status: 400 }
       );
     }
 
     if (fromItemId === toItemId) {
       return NextResponse.json(
-        { error: "Cannot split into the same item" },
+        { message: "Tidak bisa split ke item yang sama" },
         { status: 400 }
       );
     }
@@ -27,54 +48,52 @@ export async function POST(req: Request) {
     });
 
     if (!fromItem || !toItem) {
-      return NextResponse.json({ error: "Item not found" }, { status: 404 });
-    }
-
-    // VALIDATION: type must match
-    if (fromItem.type !== toItem.type) {
       return NextResponse.json(
-        { error: "OPEX ↔ CAPEX split is not allowed" },
-        { status: 400 }
+        { message: "Budget item tidak ditemukan" },
+        { status: 404 }
       );
     }
 
-    // VALIDATION: remaining must be enough
-    if (amount > fromItem.remaining) {
-      return NextResponse.json(
-        { error: `Not enough remaining in source item. Remaining: ${fromItem.remaining}` },
-        { status: 400 }
-      );
-    }
+    validateSplit(
+      fromItem.remaining,
+      amount,
+      fromItem.type,
+      toItem.type
+    );
 
-    // INSERT split log
-    await prisma.splitLog.create({
-      data: {
-        fromItemId,
-        toItemId,
-        amount,
-      },
+    // TRANSACTION
+    const result = await prisma.$transaction(async (tx) => {
+      const log = await tx.splitLog.create({
+        data: {
+          fromItemId,
+          toItemId,
+          amount,
+        },
+      });
+
+      await tx.budgetItem.update({
+        where: { id: fromItemId },
+        data: {
+          remaining: fromItem.remaining - amount,
+        },
+      });
+
+      await tx.budgetItem.update({
+        where: { id: toItemId },
+        data: {
+          remaining: toItem.remaining + amount,
+          amount: toItem.amount + amount,
+        },
+      });
+
+      return log;
     });
 
-    // UPDATE BOTH ITEMS
-    await prisma.budgetItem.update({
-      where: { id: fromItemId },
-      data: {
-        remaining: fromItem.remaining - amount,
-      },
-    });
-
-    await prisma.budgetItem.update({
-      where: { id: toItemId },
-      data: {
-        remaining: toItem.remaining + amount,
-      },
-    });
-
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("SPLIT API ERROR:", error);
+    return NextResponse.json(result);
+  } catch (err: any) {
+    console.error("SPLIT ERROR:", err);
     return NextResponse.json(
-      { error: "Server error" },
+      { message: err.message || "Server error" },
       { status: 500 }
     );
   }

@@ -1,21 +1,20 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
+// lib/auth.ts
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import type { NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
-import { AuthOptions } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
 import { verifyPassword } from "@/lib/password";
 
-// FIX: Casting adapter agar tidak bentrok dengan NextAuth types
-const adapter = PrismaAdapter(prisma) as any;
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
 
-export const authOptions: AuthOptions = {
-  adapter,
   session: {
     strategy: "jwt",
   },
 
   providers: [
-    Credentials({
-      name: "credentials",
+    CredentialsProvider({
+      name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
@@ -30,14 +29,18 @@ export const authOptions: AuthOptions = {
           where: { email: credentials.email },
         });
 
-        if (!user) throw new Error("User not found");
+        if (!user) {
+          throw new Error("User not found");
+        }
 
-        const isValid = await verifyPassword(
+        const valid = await verifyPassword(
           credentials.password,
           user.password
         );
 
-        if (!isValid) throw new Error("Invalid password");
+        if (!valid) {
+          throw new Error("Invalid password");
+        }
 
         return {
           id: user.id,
@@ -52,16 +55,16 @@ export const authOptions: AuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.role = user.role;
         token.id = user.id;
+        token.role = (user as any).role;
       }
       return token;
     },
 
     async session({ session, token }) {
-      if (token) {
-        session.user.role = token.role;
-        session.user.id = token.id;
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
       }
       return session;
     },
@@ -69,5 +72,6 @@ export const authOptions: AuthOptions = {
 
   pages: {
     signIn: "/login",
+    error: "/login",
   },
 };

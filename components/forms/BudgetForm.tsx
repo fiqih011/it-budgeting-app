@@ -1,196 +1,233 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useEffect, useState } from "react";
 
-type Category = {
+type BudgetType = "OPEX" | "CAPEX";
+
+interface Category {
   id: string;
   name: string;
-  subcategories: { id: string; name: string }[];
-};
+}
 
-export default function BudgetForm({ type }: { type: "OPEX" | "CAPEX" }) {
-  const [name, setName] = useState("");
-  const [year, setYear] = useState(new Date().getFullYear());
-  const [amount, setAmount] = useState<number>(0);
+interface Subcategory {
+  id: string;
+  name: string;
+  categoryId: string;
+}
 
-  const [coa, setCoa] = useState("");
-  const [assetNumber, setAssetNumber] = useState("");
+export default function BudgetForm({ type }: { type: BudgetType }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
-  const [categoryId, setCategoryId] = useState<string>("");
-  const [subcategoryId, setSubcategoryId] = useState<string>("");
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
 
-  const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    year: new Date().getFullYear(),
+    amount: "",
+    categoryId: "",
+    subcategoryId: "",
+    coa: "",
+    assetNumber: "",
+    estimateNextYr: "",
+  });
 
-  // Load categories from API
+  // ==========================
+  // LOAD CATEGORY + SUBCATEGORY
+  // ==========================
   useEffect(() => {
-    async function loadCategories() {
-      const res = await fetch("/api/category");
-      const data = await res.json();
-      setCategories(data);
-    }
-    loadCategories();
+    fetch("/api/category")
+      .then((r) => r.json())
+      .then((data) => {
+        setCategories(data);
+        const subs = data.flatMap((c: any) => c.subcategories || []);
+        setSubcategories(subs);
+      });
   }, []);
 
-  // Reset subcategory when category changes
-  useEffect(() => {
-    setSubcategoryId("");
-  }, [categoryId]);
+  // ==========================
+  // HANDLE CHANGE
+  // ==========================
+  function handleChange(
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  }
 
-  async function handleSubmit(e: FormEvent) {
+  // ==========================
+  // SUBMIT
+  // ==========================
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    // Client-side validation
+    if (!form.name || !form.amount || !form.categoryId) {
+      setError("Nama, Amount, dan Category wajib diisi");
+      return;
+    }
+
+    if (type === "OPEX" && !form.coa) {
+      setError("COA wajib untuk OPEX");
+      return;
+    }
+
+    if (type === "CAPEX" && !form.assetNumber) {
+      setError("Asset Number wajib untuk CAPEX");
+      return;
+    }
+
     setLoading(true);
-    setMessage(null);
-
-    const payload: any = {
-      name,
-      year,
-      amount,
-      type,
-      categoryId,
-      subcategoryId: subcategoryId || null,
-    };
-
-    if (type === "OPEX") payload.coa = coa;
-    if (type === "CAPEX") payload.assetNumber = assetNumber;
 
     try {
       const res = await fetch("/api/budget", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          name: form.name,
+          type,
+          year: Number(form.year),
+          amount: Number(form.amount),
+          categoryId: form.categoryId,
+          subcategoryId: form.subcategoryId || null,
+          coa: type === "OPEX" ? form.coa : null,
+          assetNumber: type === "CAPEX" ? form.assetNumber : null,
+          estimateNextYr: Number(form.estimateNextYr) || 0,
+        }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
 
-      setMessage("Budget item saved!");
-      setName("");
-      setAmount(0);
-      setCoa("");
-      setAssetNumber("");
-      setCategoryId("");
-      setSubcategoryId("");
-    } catch (error: any) {
-      setMessage(error.message);
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to create budget item");
+      }
+
+      setSuccess("Budget item berhasil dibuat ✅");
+
+      // Reset form
+      setForm({
+        name: "",
+        year: new Date().getFullYear(),
+        amount: "",
+        categoryId: "",
+        subcategoryId: "",
+        coa: "",
+        assetNumber: "",
+        estimateNextYr: "",
+      });
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   }
 
+  // ==========================
+  // RENDER
+  // ==========================
   return (
-    <form className="max-w-2xl bg-white p-6 rounded shadow" onSubmit={handleSubmit}>
-      <h2 className="text-xl font-semibold mb-4">{type} Budget Form</h2>
+    <form onSubmit={handleSubmit} className="space-y-4 max-w-xl">
+      <h2 className="text-xl font-semibold">
+        Input Budget {type}
+      </h2>
 
-      {/* NAME */}
-      <label className="block mb-3">
-        Name:
-        <input
-          className="w-full border p-2 rounded mt-1"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-      </label>
+      {error && <div className="text-red-600">{error}</div>}
+      {success && <div className="text-green-600">{success}</div>}
 
-      {/* YEAR */}
-      <label className="block mb-3">
-        Year:
-        <input
-          type="number"
-          className="w-full border p-2 rounded mt-1"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          required
-        />
-      </label>
+      <input
+        name="name"
+        placeholder="Nama Budget"
+        value={form.name}
+        onChange={handleChange}
+        className="w-full border p-2 rounded"
+      />
 
-      {/* AMOUNT */}
-      <label className="block mb-3">
-        Amount:
-        <input
-          type="number"
-          className="w-full border p-2 rounded mt-1"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-          required
-        />
-      </label>
+      <input
+        name="year"
+        type="number"
+        value={form.year}
+        onChange={handleChange}
+        className="w-full border p-2 rounded"
+      />
 
-      {/* CATEGORY DROPDOWN */}
-      <label className="block mb-3">
-        Category:
-        <select
-          className="w-full border p-2 rounded mt-1"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          required
-        >
-          <option value="">-- Select Category --</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
+      <input
+        name="amount"
+        type="number"
+        placeholder="Amount"
+        value={form.amount}
+        onChange={handleChange}
+        className="w-full border p-2 rounded"
+      />
+
+      <select
+        name="categoryId"
+        value={form.categoryId}
+        onChange={handleChange}
+        className="w-full border p-2 rounded"
+      >
+        <option value="">-- Pilih Category --</option>
+        {categories.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+
+      <select
+        name="subcategoryId"
+        value={form.subcategoryId}
+        onChange={handleChange}
+        className="w-full border p-2 rounded"
+      >
+        <option value="">-- Subcategory (optional) --</option>
+        {subcategories
+          .filter((s) => s.categoryId === form.categoryId)
+          .map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
             </option>
           ))}
-        </select>
-      </label>
+      </select>
 
-      {/* SUBCATEGORY DROPDOWN */}
-      <label className="block mb-3">
-        Subcategory:
-        <select
-          className="w-full border p-2 rounded mt-1"
-          value={subcategoryId}
-          onChange={(e) => setSubcategoryId(e.target.value)}
-          disabled={!categoryId}
-        >
-          <option value="">-- Optional --</option>
-
-          {categoryId &&
-            categories
-              .find((c) => c.id === categoryId)
-              ?.subcategories.map((sc) => (
-                <option key={sc.id} value={sc.id}>
-                  {sc.name}
-                </option>
-              ))}
-        </select>
-      </label>
-
-      {/* EXTRA FIELDS */}
       {type === "OPEX" && (
-        <label className="block mb-3">
-          COA:
-          <input
-            className="w-full border p-2 rounded mt-1"
-            value={coa}
-            onChange={(e) => setCoa(e.target.value)}
-          />
-        </label>
+        <input
+          name="coa"
+          placeholder="COA"
+          value={form.coa}
+          onChange={handleChange}
+          className="w-full border p-2 rounded"
+        />
       )}
 
       {type === "CAPEX" && (
-        <label className="block mb-3">
-          Asset Number:
-          <input
-            className="w-full border p-2 rounded mt-1"
-            value={assetNumber}
-            onChange={(e) => setAssetNumber(e.target.value)}
-          />
-        </label>
+        <input
+          name="assetNumber"
+          placeholder="Asset Number"
+          value={form.assetNumber}
+          onChange={handleChange}
+          className="w-full border p-2 rounded"
+        />
       )}
 
-      {/* SUBMIT BUTTON */}
-      <button
-        disabled={loading}
-        className="bg-blue-600 text-white px-4 py-2 rounded mt-3"
-      >
-        {loading ? "Saving..." : "Save Budget Item"}
-      </button>
+      <input
+        name="estimateNextYr"
+        type="number"
+        placeholder="Estimate Next Year"
+        value={form.estimateNextYr}
+        onChange={handleChange}
+        className="w-full border p-2 rounded"
+      />
 
-      {/* MESSAGE */}
-      {message && <div className="mt-4">{message}</div>}
+      <button
+        type="submit"
+        disabled={loading}
+        className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+      >
+        {loading ? "Saving..." : "Save Budget"}
+      </button>
     </form>
   );
 }

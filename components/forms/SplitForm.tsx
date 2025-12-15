@@ -2,97 +2,99 @@
 
 import { useEffect, useState } from "react";
 
+interface BudgetItem {
+  id: string;
+  name: string;
+  type: "OPEX" | "CAPEX";
+  remaining: number;
+}
+
 export default function SplitForm() {
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<BudgetItem[]>([]);
   const [fromItemId, setFromItemId] = useState("");
   const [toItemId, setToItemId] = useState("");
-  const [amount, setAmount] = useState(0);
-  const [message, setMessage] = useState("");
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/budget");
-      const data = await res.json();
-      setItems(data);
-    }
-    load();
+    fetch("/api/budget")
+      .then((r) => r.json())
+      .then(setItems);
   }, []);
 
-  async function submit(e: any) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMessage("");
+    setError(null);
+    setSuccess(null);
 
-    const res = await fetch("/api/split", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fromItemId, toItemId, amount }),
-    });
+    try {
+      const res = await fetch("/api/split", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fromItemId,
+          toItemId,
+          amount: Number(amount),
+        }),
+      });
 
-    const result = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
 
-    if (!res.ok) {
-      setMessage("❌ " + result.error);
-      return;
+      setSuccess("Split budget berhasil ✅");
+      setFromItemId("");
+      setToItemId("");
+      setAmount("");
+    } catch (err: any) {
+      setError(err.message);
     }
-
-    setMessage("✅ Split budget berhasil.");
-    setAmount(0);
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 p-4 bg-white rounded shadow">
+    <form onSubmit={handleSubmit} className="space-y-4 max-w-xl">
       <h2 className="text-xl font-semibold">Split Budget</h2>
 
-      {/* FROM */}
-      <div>
-        <label>Dari (Source Item)</label>
-        <select
-          className="border p-2 w-full rounded"
-          value={fromItemId}
-          onChange={(e) => setFromItemId(e.target.value)}
-        >
-          <option value="">-- pilih item --</option>
-          {items.map((item: any) => (
-            <option key={item.id} value={item.id}>
-              {item.name} — Remaining: {item.remaining}
-            </option>
-          ))}
-        </select>
-      </div>
+      {error && <div className="text-red-600">{error}</div>}
+      {success && <div className="text-green-600">{success}</div>}
 
-      {/* TO */}
-      <div>
-        <label>Ke (Target Item)</label>
-        <select
-          className="border p-2 w-full rounded"
-          value={toItemId}
-          onChange={(e) => setToItemId(e.target.value)}
-        >
-          <option value="">-- pilih item --</option>
-          {items.map((item: any) => (
-            <option key={item.id} value={item.id}>
-              {item.name} — Remaining: {item.remaining}
-            </option>
-          ))}
-        </select>
-      </div>
+      <select
+        value={fromItemId}
+        onChange={(e) => setFromItemId(e.target.value)}
+        className="w-full border p-2 rounded"
+      >
+        <option value="">-- Dari Budget --</option>
+        {items.map((i) => (
+          <option key={i.id} value={i.id}>
+            {i.name} ({i.type}) — sisa {i.remaining}
+          </option>
+        ))}
+      </select>
 
-      {/* AMOUNT */}
-      <div>
-        <label>Amount</label>
-        <input
-          className="border p-2 w-full rounded"
-          type="number"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-        />
-      </div>
+      <select
+        value={toItemId}
+        onChange={(e) => setToItemId(e.target.value)}
+        className="w-full border p-2 rounded"
+      >
+        <option value="">-- Ke Budget --</option>
+        {items.map((i) => (
+          <option key={i.id} value={i.id}>
+            {i.name} ({i.type})
+          </option>
+        ))}
+      </select>
+
+      <input
+        type="number"
+        placeholder="Amount"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        className="w-full border p-2 rounded"
+      />
 
       <button className="bg-purple-600 text-white px-4 py-2 rounded">
-        Submit
+        Split Budget
       </button>
-
-      {message && <div className="mt-3">{message}</div>}
     </form>
   );
 }

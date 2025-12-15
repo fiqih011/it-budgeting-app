@@ -2,90 +2,105 @@
 
 import { useEffect, useState } from "react";
 
+interface BudgetItem {
+  id: string;
+  name: string;
+  remaining: number;
+}
+
 export default function ActualForm() {
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<BudgetItem[]>([]);
   const [itemId, setItemId] = useState("");
-  const [amount, setAmount] = useState(0);
+  const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [message, setMessage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/budget");
-      const data = await res.json();
-      setItems(data);
-    }
-    load();
+    fetch("/api/budget")
+      .then((r) => r.json())
+      .then(setItems);
   }, []);
 
-  async function submit(e: any) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMessage("");
+    setError(null);
+    setSuccess(null);
 
-    const res = await fetch("/api/actual", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId, amount, note }),
-    });
-
-    const result = await res.json();
-
-    if (!res.ok) {
-      setMessage("❌ " + result.error);
+    if (!itemId || !amount) {
+      setError("Item dan amount wajib");
       return;
     }
 
-    setMessage("✅ Realisasi berhasil ditambahkan.");
+    setLoading(true);
 
-    setAmount(0);
-    setNote("");
+    try {
+      const res = await fetch("/api/actual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemId,
+          amount: Number(amount),
+          note,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+
+      setSuccess("Realisasi berhasil disimpan ✅");
+      setItemId("");
+      setAmount("");
+      setNote("");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 p-4 bg-white rounded shadow">
+    <form onSubmit={handleSubmit} className="space-y-4 max-w-xl">
       <h2 className="text-xl font-semibold">Input Actual (Realisasi)</h2>
 
-      <div>
-        <label>Pilih Budget Item</label>
-        <select
-          value={itemId}
-          onChange={(e) => setItemId(e.target.value)}
-          className="border p-2 w-full rounded"
-        >
-          <option value="">-- pilih item --</option>
-          {items.map((item: any) => (
-            <option key={item.id} value={item.id}>
-              {item.name} — Remaining: {item.remaining}
-            </option>
-          ))}
-        </select>
-      </div>
+      {error && <div className="text-red-600">{error}</div>}
+      {success && <div className="text-green-600">{success}</div>}
 
-      <div>
-        <label>Amount</label>
-        <input
-          type="number"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-          className="border p-2 w-full rounded"
-        />
-      </div>
+      <select
+        value={itemId}
+        onChange={(e) => setItemId(e.target.value)}
+        className="w-full border p-2 rounded"
+      >
+        <option value="">-- Pilih Budget Item --</option>
+        {items.map((i) => (
+          <option key={i.id} value={i.id}>
+            {i.name} (sisa: {i.remaining})
+          </option>
+        ))}
+      </select>
 
-      <div>
-        <label>Note (optional)</label>
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          className="border p-2 w-full rounded"
-        />
-      </div>
+      <input
+        type="number"
+        placeholder="Amount"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        className="w-full border p-2 rounded"
+      />
 
-      <button className="bg-blue-600 text-white px-4 py-2 rounded">
-        Submit
+      <input
+        placeholder="Note (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        className="w-full border p-2 rounded"
+      />
+
+      <button
+        disabled={loading}
+        className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+      >
+        {loading ? "Saving..." : "Save Actual"}
       </button>
-
-      {message && <div className="mt-3">{message}</div>}
     </form>
   );
 }

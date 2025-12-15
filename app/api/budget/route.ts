@@ -1,12 +1,26 @@
+// app/api/budget/route.ts
 import { NextResponse } from "next/server";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
+import { BudgetType } from "@prisma/client";
 
 // ============================
-// GET — all budget items
+// GET — list budget items (support filter)
 // ============================
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+
+  const year = searchParams.get("year");
+  const type = searchParams.get("type") as BudgetType | null;
+
   const items = await prisma.budgetItem.findMany({
-    include: { category: true, subcategory: true },
+    where: {
+      ...(year ? { year: Number(year) } : {}),
+      ...(type ? { type } : {}),
+    },
+    include: {
+      category: true,
+      subcategory: true,
+    },
     orderBy: [{ year: "desc" }, { name: "asc" }],
   });
 
@@ -28,9 +42,10 @@ export async function POST(req: Request) {
       subcategoryId,
       coa,
       assetNumber,
+      estimateNextYr = 0,
     } = body;
 
-    // required fields
+    // Required base fields
     if (!name || !type || !year || !amount || !categoryId) {
       return NextResponse.json(
         { message: "Missing required fields" },
@@ -38,7 +53,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validate category exists
+    // Validate category
     const category = await prisma.category.findUnique({
       where: { id: categoryId },
     });
@@ -49,7 +64,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Subcategory validation if provided
+    // Validate subcategory if provided
     if (subcategoryId) {
       const sub = await prisma.subcategory.findUnique({
         where: { id: subcategoryId },
@@ -62,11 +77,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // CAPEX: assetNumber MUST be unique
+    // ======================
+    // TYPE RULE VALIDATION
+    // ======================
     if (type === "CAPEX") {
       if (!assetNumber) {
         return NextResponse.json(
-          { message: "CAPEX requires an assetNumber" },
+          { message: "CAPEX requires assetNumber" },
+          { status: 400 }
+        );
+      }
+
+      if (coa) {
+        return NextResponse.json(
+          { message: "CAPEX cannot have COA" },
           { status: 400 }
         );
       }
@@ -83,28 +107,46 @@ export async function POST(req: Request) {
       }
     }
 
-    // OPEX → COA allowed duplicate, so no validation needed
+    if (type === "OPEX") {
+      if (!coa) {
+        return NextResponse.json(
+          { message: "OPEX requires COA" },
+          { status: 400 }
+        );
+      }
 
-    // Remaining budget = amount (since used = 0)
+      if (assetNumber) {
+        return NextResponse.json(
+          { message: "OPEX cannot have assetNumber" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const used = 0;
+    const remaining = amount - used;
+
     const item = await prisma.budgetItem.create({
       data: {
         name,
         type,
         year,
         amount,
-        used: 0,
-        remaining: amount,
+        used,
+        remaining,
+        estimateNextYr,
         categoryId,
         subcategoryId,
-        coa,
-        assetNumber,
+        coa: type === "OPEX" ? coa : null,
+        assetNumber: type === "CAPEX" ? assetNumber : null,
       },
     });
 
     return NextResponse.json(item);
   } catch (error) {
+    console.error("CREATE BUDGET ITEM ERROR:", error);
     return NextResponse.json(
-      { message: "Server error", error },
+      { message: "Server error" },
       { status: 500 }
     );
   }
@@ -124,13 +166,13 @@ export async function PUT(req: Request) {
       subcategoryId,
       coa,
       assetNumber,
+      estimateNextYr,
     } = body;
 
     if (!id) {
       return NextResponse.json({ message: "ID required" }, { status: 400 });
     }
 
-    // Load existing item
     const prev = await prisma.budgetItem.findUnique({ where: { id } });
     if (!prev) {
       return NextResponse.json(
@@ -139,36 +181,38 @@ export async function PUT(req: Request) {
       );
     }
 
-    // Type cannot be changed
-    if (assetNumber && prev.type !== "CAPEX") {
-      return NextResponse.json(
-        { message: "Cannot assign assetNumber to an OPEX item" },
-        { status: 400 }
-      );
-    }
-
-    if (coa && prev.type !== "OPEX") {
-      return NextResponse.json(
-        { message: "Cannot assign COA to a CAPEX item" },
-        { status: 400 }
-      );
-    }
-
-    // CAPEX asset number uniqueness check
-    if (prev.type === "CAPEX" && assetNumber) {
-      const duplicate = await prisma.budgetItem.findFirst({
-        where: { assetNumber, NOT: { id } },
-      });
-
-      if (duplicate) {
+    // Type rules (cannot change type implicitly)
+    if (prev.type === "CAPEX") {
+      if (coa) {
         return NextResponse.json(
-          { message: "Asset number already used by another item" },
+          { message: "CAPEX cannot have COA" },
+          { status: 400 }
+        );
+      }
+
+      if (assetNumber) {
+        const dup = await prisma.budgetItem.findFirst({
+          where: { assetNumber, NOT: { id } },
+        });
+
+        if (dup) {
+          return NextResponse.json(
+            { message: "Asset number already used" },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    if (prev.type === "OPEX") {
+      if (assetNumber) {
+        return NextResponse.json(
+          { message: "OPEX cannot have assetNumber" },
           { status: 400 }
         );
       }
     }
 
-    // Recalculate remaining if amount changed
     const newRemaining =
       amount !== undefined ? amount - prev.used : prev.remaining;
 
@@ -182,20 +226,22 @@ export async function PUT(req: Request) {
         subcategoryId,
         coa,
         assetNumber,
+        estimateNextYr,
       },
     });
 
     return NextResponse.json(updated);
   } catch (error) {
+    console.error("UPDATE BUDGET ITEM ERROR:", error);
     return NextResponse.json(
-      { message: "Server error", error },
+      { message: "Server error" },
       { status: 500 }
     );
   }
 }
 
 // ============================
-// DELETE — delete item
+// DELETE — delete budget item
 // ============================
 export async function DELETE(req: Request) {
   try {
@@ -214,8 +260,9 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ message: "Deleted successfully" });
   } catch (error) {
+    console.error("DELETE BUDGET ITEM ERROR:", error);
     return NextResponse.json(
-      { message: "Server error", error },
+      { message: "Server error" },
       { status: 500 }
     );
   }

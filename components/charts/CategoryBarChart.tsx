@@ -1,24 +1,33 @@
 "use client";
 
 import { Bar } from "react-chartjs-2";
-import { Chart as ChartJS, BarElement, CategoryScale, LinearScale, Tooltip } from "chart.js";
+import {
+  Chart as ChartJS,
+  BarElement,
+  CategoryScale,
+  LinearScale,
+  Tooltip,
+  Legend,
+} from "chart.js";
 
-ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip);
+ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
-export default function CategoryBarChart({ data }: any) {
-  const labels = Object.keys(data);
-  const values = Object.values(data);
-
-  const chartData = {
-    labels,
-    datasets: [
-      {
-        label: "Budget per Category",
-        data: values,
-        backgroundColor: "#10b981",
-      },
-    ],
-  };
-
-  return <Bar data={chartData} />;
+export default function CategoryBarChart({
+  data,
+}: {
+  data: { name: string; amount: number }[];
+}) {
+  return (
+    <Bar
+      data={{
+        labels: data.map((d) => d.name),
+        datasets: [
+          {
+            label: "Budget Amount",
+            data: data.map((d) => d.amount),
+          },
+        ],
+      }}
+    />
+  );
 }
