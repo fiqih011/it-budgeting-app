@@ -4,9 +4,14 @@ import { useEffect, useState } from "react";
 import SummaryCard from "@/components/dashboard/SummaryCard";
 import OpexCapexDonut from "@/components/charts/OpexCapexDonut";
 import CategoryBarChart from "@/components/charts/CategoryBarChart";
+import Skeleton from "@/components/ui/Skeleton";
+import EmptyState from "@/components/ui/EmptyState";
+import ErrorState from "@/components/ui/ErrorState";
 
 /**
- * Type definitions (explicit & aman)
+ * =========================
+ * TYPE DEFINITIONS
+ * =========================
  */
 type Summary = {
   amount: number;
@@ -32,70 +37,139 @@ type BreakdownResponse = {
   capex: BreakdownRow[];
 };
 
+/**
+ * =========================
+ * DASHBOARD PAGE
+ * =========================
+ */
 export default function DashboardPage() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [breakdown, setBreakdown] = useState<BreakdownResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    async function load() {
+    async function loadDashboard() {
       try {
-        const [s, b] = await Promise.all([
-          fetch("/api/dashboard/summary", { cache: "no-store" }).then((r) => r.json()),
-          fetch("/api/dashboard/breakdown", { cache: "no-store" }).then((r) => r.json()),
+        setLoading(true);
+        setError(null);
+
+        const [summaryRes, breakdownRes] = await Promise.all([
+          fetch("/api/dashboard/summary", { cache: "no-store" }),
+          fetch("/api/dashboard/breakdown", { cache: "no-store" }),
         ]);
 
+        if (!summaryRes.ok || !breakdownRes.ok) {
+          throw new Error("API response not OK");
+        }
+
+        const summaryData: SummaryResponse = await summaryRes.json();
+        const breakdownData: BreakdownResponse = await breakdownRes.json();
+
         if (!mounted) return;
-        setSummary(s);
-        setBreakdown(b);
+
+        setSummary(summaryData);
+        setBreakdown(breakdownData);
       } catch (err) {
         console.error("Dashboard load error:", err);
+        if (mounted) {
+          setError("Gagal memuat data dashboard");
+        }
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
-    load();
+    loadDashboard();
+
     return () => {
       mounted = false;
     };
   }, []);
 
+  /**
+   * =========================
+   * LOADING STATE (SKELETON)
+   * =========================
+   */
   if (loading) {
     return (
-      <div className="p-8">
-        <p className="text-gray-500">Loading dashboard...</p>
-      </div>
-    );
-  }
+      <div className="p-8 space-y-6">
+        <Skeleton className="h-8 w-48" />
 
-  if (!summary || !breakdown) {
-    return (
-      <div className="p-8">
-        <p className="text-red-600">Gagal memuat data dashboard</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
       </div>
     );
   }
 
   /**
-   * Chart data mapping (aman & sederhana)
+   * =========================
+   * ERROR STATE
+   * =========================
+   */
+  if (error || !summary || !breakdown) {
+    return (
+      <div className="p-8">
+        <ErrorState message={error ?? "Data dashboard tidak tersedia"} />
+      </div>
+    );
+  }
+
+  /**
+   * =========================
+   * EMPTY STATE
+   * =========================
+   */
+  if (summary.total.amount === 0) {
+    return (
+      <div className="p-8">
+        <EmptyState
+          title="Belum ada data budget"
+          description="Silakan input atau import budget terlebih dahulu."
+        />
+      </div>
+    );
+  }
+
+  /**
+   * =========================
+   * DATA MAPPING (SAFE)
+   * =========================
    */
   const opexTotal = summary.opex.amount;
   const capexTotal = summary.capex.amount;
 
-  const categoryData = [
-    ...breakdown.opex,
-    ...breakdown.capex,
-  ].map((c) => ({
-    name: c.category,
-    amount: c.amount,
+  const categoryData = [...breakdown.opex, ...breakdown.capex].map((row) => ({
+    name: row.category,
+    amount: row.amount,
   }));
 
+  /**
+   * =========================
+   * RENDER
+   * =========================
+   */
   return (
     <div className="p-8 space-y-6">
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <div>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <p className="text-sm text-gray-500">
+          Ringkasan budget tahun {summary.year}
+        </p>
+      </div>
 
       {/* KPI */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
