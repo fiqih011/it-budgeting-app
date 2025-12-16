@@ -5,17 +5,18 @@ import { parseExcel } from "@/lib/excel";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = [
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-  "application/vnd.ms-excel", // .xls
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
 ];
 
 export async function POST(req: Request) {
   try {
-    // Parse form data
+    // ======================
+    // 1. FILE VALIDATION
+    // ======================
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
-    // Validasi file ada
     if (!file) {
       return NextResponse.json(
         { message: "File wajib diupload" },
@@ -23,107 +24,174 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validasi tipe file
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
-        { 
-          message: "Tipe file tidak valid. Hanya file Excel (.xlsx, .xls) yang diperbolehkan",
-          allowedTypes: ALLOWED_TYPES 
-        },
+        { message: "Tipe file tidak valid (xlsx / xls)" },
         { status: 400 }
       );
     }
 
-    // Validasi ukuran file
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { 
-          message: `Ukuran file terlalu besar. Maksimal ${MAX_FILE_SIZE / 1024 / 1024}MB`,
-          fileSize: file.size,
-          maxSize: MAX_FILE_SIZE
-        },
+        { message: "Ukuran file maksimal 10MB" },
         { status: 400 }
       );
     }
 
-    // Konversi file ke ArrayBuffer
+    // ======================
+    // 2. PARSE EXCEL
+    // ======================
     const arrayBuffer = await file.arrayBuffer();
-
-    // Parse Excel (langsung pakai ArrayBuffer)
     const rows = await parseExcel(arrayBuffer);
 
-    // Optional: Validasi business logic untuk CAPEX
-    const missingAssetNumbers = rows.filter(row => {
-      // Contoh: CAPEX wajib punya asset number
-      return !row.assetNumber || row.assetNumber.trim().length === 0;
-    });
-
-    if (missingAssetNumbers.length > 0) {
+    if (!rows.length) {
       return NextResponse.json(
-        {
-          message: "Beberapa baris tidak memiliki Asset Number. CAPEX wajib memiliki Asset Number",
-          missingCount: missingAssetNumbers.length,
-          preview: rows,
-          total: rows.length,
-        },
+        { message: "File Excel kosong" },
         { status: 400 }
       );
     }
 
-    // Check for duplicate asset numbers
-    const assetNumbers = rows.map(r => r.assetNumber);
-    const duplicates = assetNumbers.filter((item, index) => 
-      assetNumbers.indexOf(item) !== index
+    // ======================
+    // 3. VALIDASI CAPEX
+    // ======================
+    const invalid = rows.filter(
+      (r) => !r.assetNumber || r.assetNumber.trim() === ""
     );
 
-    if (duplicates.length > 0) {
+    if (invalid.length > 0) {
       return NextResponse.json(
         {
-          message: "Ditemukan Asset Number duplikat dalam file",
-          duplicates: [...new Set(duplicates)],
-          preview: rows,
-          total: rows.length,
+          message: "CAPEX wajib memiliki Asset Number",
+          invalidCount: invalid.length,
         },
         { status: 400 }
       );
     }
 
+    // ======================
+    // 4. IMPORT + MERGE
+    // ======================
+    let created = 0;
+    let merged = 0;
+    let failed = 0;
+
+    const errors: any[] = [];
+
+    for (const row of rows) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          const category = await tx.category.findFirst({
+            where: { name: row.category },
+          });
+
+          if (!category) {
+            throw new Error(`Category '${row.category}' tidak ditemukan`);
+          }
+
+          const subcategory = await tx.subcategory.findFirst({
+            where: {
+              name: row.subcategory,
+              categoryId: category.id,
+            },
+          });
+
+          if (!subcategory) {
+            throw new Error(
+              `Subcategory '${row.subcategory}' tidak ditemukan`
+            );
+          }
+
+          const existing = await tx.budgetItem.findFirst({
+            where: {
+              assetNumber: row.assetNumber,
+              year: Number(row.year),
+              type: "CAPEX",
+            },
+          });
+
+          const amount = Number(row.amount);
+
+          if (isNaN(amount) || amount <= 0) {
+            throw new Error("Amount tidak valid");
+          }
+
+          if (existing) {
+            // ======================
+            // MERGE CAPEX
+            // ======================
+            await tx.budgetItem.update({
+              where: { id: existing.id },
+              data: {
+                amount: existing.amount + amount,
+                remaining: existing.remaining + amount,
+              },
+            });
+            merged++;
+          } else {
+            // ======================
+            // CREATE CAPEX
+            // ======================
+            await tx.budgetItem.create({
+              data: {
+                name: row.name,
+                type: "CAPEX",
+                year: Number(row.year),
+                amount,
+                used: 0,
+                remaining: amount,
+                assetNumber: row.assetNumber,
+                coa: null,
+                categoryId: category.id,
+                subcategoryId: subcategory.id,
+              },
+            });
+            created++;
+          }
+        });
+      } catch (err: any) {
+        failed++;
+        errors.push({
+          assetNumber: row.assetNumber,
+          error: err.message,
+        });
+      }
+    }
+
+    // ======================
+    // 5. RESPONSE SUMMARY
+    // ======================
     return NextResponse.json({
       success: true,
-      message: `Berhasil memproses ${rows.length} baris data CAPEX`,
-      preview: rows.slice(0, 10), // Preview 10 baris pertama saja
       total: rows.length,
+      created,
+      merged,
+      failed,
+      errors,
     });
-
   } catch (err: any) {
     console.error("IMPORT CAPEX ERROR:", err);
-    
     return NextResponse.json(
-      { 
+      {
         success: false,
-        message: err.message || "Terjadi kesalahan saat memproses file",
-        error: process.env.NODE_ENV === "development" ? err.toString() : undefined
+        message: err.message || "Gagal import CAPEX",
       },
       { status: 500 }
     );
   }
 }
 
-// Optional: Add GET method untuk informasi endpoint
+// ======================
+// INFO ENDPOINT
+// ======================
 export async function GET() {
   return NextResponse.json({
     endpoint: "/api/import-capex",
     method: "POST",
-    description: "Import CAPEX data dari file Excel",
-    maxFileSize: `${MAX_FILE_SIZE / 1024 / 1024}MB`,
-    allowedTypes: ALLOWED_TYPES,
-    expectedColumns: [
-      "Name (A)",
-      "Amount (B)", 
-      "Category (C)",
-      "Subcategory (D)",
-      "COA (E)",
-      "Asset Number (F) - required for CAPEX"
-    ]
+    description: "Import CAPEX dari Excel (merge by AssetNumber)",
+    rules: {
+      assetNumber: "WAJIB & UNIQUE",
+      coa: "HARUS NULL",
+      type: "CAPEX",
+    },
   });
 }
