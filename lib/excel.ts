@@ -1,96 +1,113 @@
 // lib/excel.ts
 import ExcelJS from "exceljs";
 
-export interface ExcelRow {
+export type OpexPreviewRow = {
+  rowNumber: number;
   name: string;
-  amount: number;
   category: string;
-  subcategory: string;
-  coa: string;
-  assetNumber: string;
+  subcategory?: string;
+  coa?: string;
+  amount: number;
+  errors: string[];
+};
+
+const REQUIRED_HEADERS = [
+  "name",
+  "category",
+  "subcategory",
+  "coa",
+  "amount",
+];
+
+function normalizeHeader(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
 }
 
-/**
- * Parse Excel file buffer into rows
- * Expect header in row 1
- */
-export async function parseExcel(arrayBuffer: ArrayBuffer): Promise<ExcelRow[]> {
-  try {
-    const workbook = new ExcelJS.Workbook();
-    
-    // ExcelJS load method can accept ArrayBuffer directly in newer versions
-    // or we use Buffer.from for compatibility
-    const buffer = Buffer.from(arrayBuffer);
-    await workbook.xlsx.load(buffer as any); // Type assertion to bypass strict typing
-    
-    const sheet = workbook.worksheets[0];
-    if (!sheet) {
-      throw new Error("Excel sheet tidak ditemukan");
-    }
-
-    if (sheet.rowCount < 2) {
-      throw new Error("File Excel kosong atau hanya berisi header");
-    }
-
-    const rows: ExcelRow[] = [];
-    let errorRows: number[] = [];
-
-    sheet.eachRow((row, rowNumber) => {
-      // Skip header row
-      if (rowNumber === 1) return;
-
-      try {
-        const name = String(row.getCell(1).value ?? "").trim();
-        const amountValue = row.getCell(2).value;
-        const category = String(row.getCell(3).value ?? "").trim();
-        const subcategory = String(row.getCell(4).value ?? "").trim();
-        const coa = String(row.getCell(5).value ?? "").trim();
-        const assetNumber = String(row.getCell(6).value ?? "").trim();
-
-        // Validasi data minimal
-        if (!name) {
-          console.warn(`Baris ${rowNumber}: Name kosong, dilewati`);
-          errorRows.push(rowNumber);
-          return;
-        }
-
-        // Parse amount dengan lebih robust
-        let amount = 0;
-        if (typeof amountValue === 'number') {
-          amount = amountValue;
-        } else if (typeof amountValue === 'string') {
-          // Handle format currency (misal: "Rp 1.000.000" atau "1,000.00")
-          const cleanAmount = amountValue.replace(/[^\d.-]/g, '');
-          amount = parseFloat(cleanAmount) || 0;
-        }
-
-        rows.push({
-          name,
-          amount,
-          category,
-          subcategory,
-          coa,
-          assetNumber,
-        });
-      } catch (err) {
-        console.warn(`Error parsing baris ${rowNumber}:`, err);
-        errorRows.push(rowNumber);
-      }
-    });
-
-    if (rows.length === 0) {
-      throw new Error("Tidak ada data valid yang ditemukan di file Excel");
-    }
-
-    if (errorRows.length > 0) {
-      console.warn(`${errorRows.length} baris dilewati karena data tidak valid:`, errorRows);
-    }
-
-    return rows;
-  } catch (err) {
-    if (err instanceof Error) {
-      throw new Error(`Gagal parse Excel: ${err.message}`);
-    }
-    throw new Error("Gagal parse Excel: Unknown error");
+function toNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const n = Number(value.replace(/,/g, ""));
+    return isNaN(n) ? 0 : n;
   }
+  return 0;
+}
+
+export async function parseOpexExcelPreview(
+  file: File
+): Promise<OpexPreviewRow[]> {
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+
+  await workbook.xlsx.load(buffer);
+
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    throw new Error("Worksheet tidak ditemukan");
+  }
+
+  // ===== HEADER VALIDATION =====
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
+
+  headerRow.eachCell((cell) => {
+    headers.push(normalizeHeader(cell.value));
+  });
+
+  for (const required of REQUIRED_HEADERS) {
+    if (!headers.includes(required)) {
+      throw new Error(`Header "${required}" tidak ditemukan di Excel`);
+    }
+  }
+
+  const headerIndex: Record<string, number> = {};
+  headers.forEach((h, idx) => {
+    headerIndex[h] = idx + 1;
+  });
+
+  // ===== DATA ROWS =====
+  const rows: OpexPreviewRow[] = [];
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    const errors: string[] = [];
+
+    const name = String(
+      row.getCell(headerIndex["name"]).value ?? ""
+    ).trim();
+
+    const category = String(
+      row.getCell(headerIndex["category"]).value ?? ""
+    ).trim();
+
+    const subcategory = String(
+      row.getCell(headerIndex["subcategory"]).value ?? ""
+    ).trim();
+
+    const coa = String(
+      row.getCell(headerIndex["coa"]).value ?? ""
+    ).trim();
+
+    const amount = toNumber(
+      row.getCell(headerIndex["amount"]).value
+    );
+
+    if (!name) errors.push("Nama item kosong");
+    if (!category) errors.push("Category kosong");
+    if (!coa) errors.push("COA kosong");
+    if (amount <= 0) errors.push("Amount harus > 0");
+
+    rows.push({
+      rowNumber,
+      name,
+      category,
+      subcategory: subcategory || undefined,
+      coa: coa || undefined,
+      amount,
+      errors,
+    });
+  });
+
+  return rows;
 }

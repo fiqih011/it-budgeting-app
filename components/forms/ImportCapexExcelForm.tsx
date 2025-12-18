@@ -1,19 +1,19 @@
 "use client";
 
-export default function ImportOpexExcelForm() {
+export default function ImportCapexExcelForm() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">
-        Import OPEX Excel
+        Import CAPEX Excel
       </h2>
 
       {/* DOWNLOAD TEMPLATE */}
       <a
-        href="/templates/template-opex.xlsx"
+        href="/templates/template-capex.xlsx"
         download
         className="inline-block text-sm text-blue-600 underline"
       >
-        Download Template OPEX
+        Download Template CAPEX
       </a>
 
       {/* TAHUN */}

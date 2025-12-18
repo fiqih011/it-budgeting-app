@@ -7,7 +7,9 @@ import { useState } from "react";
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  const passwordChanged = searchParams.get("passwordChanged");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,8 +48,16 @@ export default function LoginPage() {
           Sign in to your account
         </p>
 
+        {/* ✅ SUCCESS: PASSWORD CHANGED */}
+        {passwordChanged && (
+          <div className="mb-4 rounded bg-green-100 border border-green-300 text-green-800 px-4 py-2 text-sm">
+            Password berhasil diganti. Silakan login kembali.
+          </div>
+        )}
+
+        {/* ❌ ERROR LOGIN */}
         {error && (
-          <div className="mb-4 rounded bg-red-100 text-red-700 px-4 py-2 text-sm">
+          <div className="mb-4 rounded bg-red-100 border border-red-300 text-red-700 px-4 py-2 text-sm">
             {error}
           </div>
         )}

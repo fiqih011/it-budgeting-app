@@ -1,16 +1,43 @@
 "use client";
 
-import { signOut } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 
-export default function Navbar() {
+export default function NavbarAuth() {
+  const { status } = useSession();
+
   return (
-    <div className="w-full h-14 bg-white dark:bg-gray-800 shadow flex items-center justify-end px-6">
-      <button
-        onClick={() => signOut()}
-        className="bg-red-500 text-white px-4 py-1 rounded hover:bg-red-600"
-      >
-        Logout
-      </button>
+    <div className="flex justify-end items-center p-4 border-b bg-white">
+      {status === "loading" && (
+        <span className="text-sm text-gray-400">
+          Checking session...
+        </span>
+      )}
+
+      {status === "authenticated" && (
+        <button
+          onClick={() =>
+            signOut({
+              callbackUrl: "/dashboard",
+            })
+          }
+          className="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition"
+        >
+          Logout
+        </button>
+      )}
+
+      {status === "unauthenticated" && (
+        <button
+          onClick={() =>
+            signIn(undefined, {
+              callbackUrl: "/dashboard",
+            })
+          }
+          className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition"
+        >
+          Login
+        </button>
+      )}
     </div>
   );
 }

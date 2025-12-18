@@ -1,4 +1,3 @@
-import NextAuth, { DefaultSession } from "next-auth";
 import { Role } from "@prisma/client";
 
 declare module "next-auth" {
@@ -7,14 +6,19 @@ declare module "next-auth" {
       id: string;
       role: Role;
       active: boolean;
-      forcePasswordChange: boolean;
-    } & DefaultSession["user"];
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    };
   }
 
   interface User {
+    id: string;
     role: Role;
     active: boolean;
-    forcePasswordChange: boolean;
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
   }
 }
 
@@ -23,6 +27,7 @@ declare module "next-auth/jwt" {
     id: string;
     role: Role;
     active: boolean;
-    forcePasswordChange: boolean;
+    name?: string | null;
+    email?: string | null;
   }
 }

@@ -1,21 +1,20 @@
 "use client";
 
 import { ReactNode } from "react";
+import { Role } from "@prisma/client";
 import { useRole } from "@/lib/use-role";
 
 type Props = {
-  allow: ("ADMIN" | "VIEWER")[];
+  allow: Role[];
   children: ReactNode;
 };
 
 export default function RoleGate({ allow, children }: Props) {
   const { role, loading } = useRole();
 
-  if (loading) {
-    return <div className="text-gray-400">Checking permission...</div>;
-  }
+  if (loading) return null;
 
-  if (!role || !allow.includes(role as any)) {
+  if (!role || !allow.includes(role)) {
     return null;
   }
 

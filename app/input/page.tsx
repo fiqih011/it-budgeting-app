@@ -7,23 +7,34 @@ import ActualForm from "@/components/forms/ActualForm";
 import SplitForm from "@/components/forms/SplitForm";
 import ImportMappingForm from "@/components/forms/ImportMappingForm";
 import ImportOpexExcelForm from "@/components/forms/ImportOpexExcelForm";
+import ImportCapexExcelForm from "@/components/forms/ImportCapexExcelForm";
 import Button from "@/components/ui/Button";
 
+type ViewMode =
+  | "menu"
+  | "budget-opex"
+  | "budget-capex"
+  | "actual"
+  | "split"
+  | "import-opex"
+  | "import-capex";
+
 export default function InputPage() {
-  const [view, setView] = useState<
-    | "menu"
-    | "budget-opex"
-    | "budget-capex"
-    | "actual"
-    | "split"
-    | "import-opex"
-    | "import-capex"
-  >("menu");
+  const [view, setView] = useState<ViewMode>("menu");
+
+  const BackButton = () => (
+    <div className="mb-4">
+      <Button onClick={() => setView("menu")} title="← Back to menu" />
+    </div>
+  );
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-semibold mb-6">Input — Quick Actions</h1>
+      <h1 className="text-2xl font-semibold mb-6">
+        Input — Quick Actions
+      </h1>
 
+      {/* ================= MENU ================= */}
       {view === "menu" && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Button
@@ -59,65 +70,53 @@ export default function InputPage() {
         </div>
       )}
 
+      {/* ================= CONTENT ================= */}
       <div className="mt-6">
-        {/* ---------------- OPEX BUDGET ---------------- */}
+        {/* -------- OPEX BUDGET -------- */}
         {view === "budget-opex" && (
           <>
-            <div className="mb-4">
-              <Button onClick={() => setView("menu")} title="← Back to menu" />
-            </div>
+            <BackButton />
             <BudgetForm type="OPEX" />
           </>
         )}
 
-        {/* ---------------- CAPEX BUDGET ---------------- */}
+        {/* -------- CAPEX BUDGET -------- */}
         {view === "budget-capex" && (
           <>
-            <div className="mb-4">
-              <Button onClick={() => setView("menu")} title="← Back to menu" />
-            </div>
+            <BackButton />
             <BudgetForm type="CAPEX" />
           </>
         )}
 
-        {/* ---------------- ACTUAL (REALISASI) ---------------- */}
+        {/* -------- ACTUAL -------- */}
         {view === "actual" && (
           <>
-            <div className="mb-4">
-              <Button onClick={() => setView("menu")} title="← Back to menu" />
-            </div>
+            <BackButton />
             <ActualForm />
           </>
         )}
 
-        {/* ---------------- SPLIT ---------------- */}
+        {/* -------- SPLIT -------- */}
         {view === "split" && (
           <>
-            <div className="mb-4">
-              <Button onClick={() => setView("menu")} title="← Back to menu" />
-            </div>
+            <BackButton />
             <SplitForm />
           </>
         )}
 
-        {/* ---------------- IMPORT OPEX EXCEL ---------------- */}
+        {/* -------- IMPORT OPEX -------- */}
         {view === "import-opex" && (
           <>
-            <div className="mb-4">
-              <Button onClick={() => setView("menu")} title="← Back to menu" />
-            </div>
+            <BackButton />
             <ImportOpexExcelForm />
           </>
         )}
 
-        {/* ---------------- IMPORT CAPEX EXCEL (NANTI) ---------------- */}
+        {/* -------- IMPORT CAPEX -------- */}
         {view === "import-capex" && (
           <>
-            <div className="mb-4">
-              <Button onClick={() => setView("menu")} title="← Back to menu" />
-            </div>
-            {/* nanti ganti ImportCapexExcelForm */}
-            <ImportMappingForm type="CAPEX" />
+            <BackButton />
+            <ImportCapexExcelForm />
           </>
         )}
       </div>

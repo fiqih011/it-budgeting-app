@@ -7,12 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+//
 // =========================================
 // ENUMS
 // =========================================
+//
 
 enum Role {
   ADMIN
+  USER
   VIEWER
 }
 
@@ -21,24 +24,35 @@ enum BudgetType {
   CAPEX
 }
 
+//
 // =========================================
 // MODEL: USER
 // =========================================
+//
 
 model User {
-  id        String    @id @default(uuid())
-  name      String
-  email     String    @unique
+  id        String   @id @default(uuid())
+  name      String?
+  email     String   @unique
   password  String
-  role      Role      @default(VIEWER)
-  createdAt DateTime  @default(now())
 
-  AuditLogs AuditLog[]
+  role      Role     @default(USER)
+  active    Boolean  @default(true)
+
+  // 🔐 SECURITY FLAGS
+  forcePasswordChange Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
 }
 
+//
 // =========================================
 // MODEL: CATEGORY
 // =========================================
+//
 
 model Category {
   id            String        @id @default(uuid())
@@ -49,9 +63,11 @@ model Category {
   items         BudgetItem[]
 }
 
+//
 // =========================================
 // MODEL: SUBCATEGORY
 // =========================================
+//
 
 model Subcategory {
   id          String       @id @default(uuid())
@@ -63,9 +79,11 @@ model Subcategory {
   items       BudgetItem[]
 }
 
+//
 // =========================================
 // MODEL: BUDGET ITEM
 // =========================================
+//
 
 model BudgetItem {
   id             String      @id @default(uuid())
@@ -77,10 +95,10 @@ model BudgetItem {
   remaining      Float       @default(0)
   estimateNextYr Float       @default(0)
 
-  // OPEX field
+  // OPEX
   coa            String?
 
-  // CAPEX field
+  // CAPEX
   assetNumber    String?     @unique
 
   categoryId     String
@@ -96,9 +114,11 @@ model BudgetItem {
   splitLogsTo    SplitLog[]  @relation("ToItem")
 }
 
+//
 // =========================================
 // MODEL: USAGE LOG
 // =========================================
+//
 
 model UsageLog {
   id        String     @id @default(uuid())
@@ -110,9 +130,11 @@ model UsageLog {
   item      BudgetItem @relation(fields: [itemId], references: [id])
 }
 
+//
 // =========================================
 // MODEL: SPLIT LOG
 // =========================================
+//
 
 model SplitLog {
   id          String     @id @default(uuid())
@@ -125,9 +147,11 @@ model SplitLog {
   toItem      BudgetItem @relation("ToItem", fields: [toItemId], references: [id])
 }
 
+//
 // =========================================
 // MODEL: AUDIT LOG
 // =========================================
+//
 
 model AuditLog {
   id        String   @id @default(uuid())
